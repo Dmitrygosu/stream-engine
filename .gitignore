@@ -1,0 +1,31 @@
+# Binaries
+bin/
+/main
+*.exe
+*.test
+*.prof
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Environment Variables (CRITICAL for open source)
+.env
+.env.*
+!.env.example
+
+# Vendor
+vendor/
+
+# Local Dev
+docker-compose.override.yaml
+postgres_data/
+kafka_data/
+redis_data/
+tmp/
+coverage.out
