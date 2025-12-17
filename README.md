@@ -24,7 +24,7 @@
 
 ## Запуск
 
-### Локально (Docker Compose)
+### Локально (Рекомендуется Docker Compose).
 
 Поднять все зависимости (Postgres, Kafka, Zookeeper, Migrations):
 
