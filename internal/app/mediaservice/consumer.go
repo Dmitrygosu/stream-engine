@@ -2,42 +2,37 @@ package mediaservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 )
 
 type Transcoder interface {
 	Transcode(ctx context.Context, fileID string) (string, time.Duration, error)
 }
 
-// FFMPEGTranscoder implements real transcoding logic
-type FFMPEGTranscoder struct {
-	logger *zap.Logger
+// SimulatedTranscoder stands in for a real FFmpeg/HLS pipeline: it waits a
+// moment and returns a CDN URL for the playlist. It keeps the event flow
+// testable end to end without media files.
+type SimulatedTranscoder struct {
+	delay time.Duration
 }
 
-func NewFFMPEGTranscoder(logger *zap.Logger) *FFMPEGTranscoder {
-	return &FFMPEGTranscoder{logger: logger}
+func NewSimulatedTranscoder(delay time.Duration) *SimulatedTranscoder {
+	return &SimulatedTranscoder{delay: delay}
 }
 
-func (t *FFMPEGTranscoder) Transcode(ctx context.Context, fileID string) (string, time.Duration, error) {
-	// In a production environment, this would run a real FFmpeg command:
-	// cmd := exec.CommandContext(ctx, "ffmpeg", "-i", input, "-c:v", "libx264", output)
-	
-	// Check if ffmpeg is installed (Real Scenario Check)
-	if _, err := exec.LookPath("ffmpeg"); err != nil {
-		t.logger.Warn("FFmpeg not found, using fallback duration", zap.Error(err))
-		time.Sleep(2 * time.Second) // Fallback behavior
-		return fmt.Sprintf("https://cdn.stream-engine.local/%s/master.m3u8", fileID), 120 * time.Second, nil
+func (t *SimulatedTranscoder) Transcode(ctx context.Context, fileID string) (string, time.Duration, error) {
+	select {
+	case <-ctx.Done():
+		return "", 0, ctx.Err()
+	case <-time.After(t.delay):
 	}
-
-	// If installed, we would execute it. For stability in this demo enviroment, return success.
-	t.logger.Info("FFmpeg found, starting transcoding job...", zap.String("file_id", fileID))
-	time.Sleep(1 * time.Second)
-	
 	return fmt.Sprintf("https://cdn.stream-engine.local/%s/master.m3u8", fileID), 120 * time.Second, nil
 }
 
@@ -57,47 +52,68 @@ func NewConsumerHandler(repo VideoRepository, producer EventProducer, transcoder
 	}
 }
 
-func (h *ConsumerHandler) HandleVideoUploaded(ctx context.Context, key, value []byte) error {
-	videoIDStr := string(value)
-	videoID, err := uuid.Parse(videoIDStr)
+// HandleVideoUploaded processes one video.uploaded event.
+//
+// It returns an error only for failures worth retrying (database, broker).
+// Events that can never succeed — a malformed id, an unknown video — are
+// logged and dropped. Kafka delivers at least once, so the handler is
+// idempotent: a redelivered event for a published video only re-emits
+// video.ready, and a failed video is not processed again.
+func (h *ConsumerHandler) HandleVideoUploaded(ctx context.Context, value []byte) error {
+	videoID, err := uuid.Parse(string(value))
 	if err != nil {
-		h.logger.Error("failed to parse video id", zap.Error(err), zap.String("value", videoIDStr))
+		h.logger.Error("dropping event with malformed video id", zap.ByteString("value", value))
 		return nil
 	}
 
-	h.logger.Info("Processing video", zap.String("video_id", videoIDStr))
-
 	v, err := h.repo.GetByID(ctx, videoID)
+	if errors.Is(err, video.ErrVideoNotFound) {
+		h.logger.Error("dropping event for unknown video", zap.Stringer("video_id", videoID))
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("get video: %w", err)
 	}
 
-	videoEntity := v
+	switch v.Status {
+	case video.StatusPublished:
+		// Redelivery after a crash between saving and emitting video.ready.
+		return h.publishReady(ctx, v)
+	case video.StatusFailed:
+		h.logger.Info("skipping video that already failed", zap.Stringer("video_id", v.ID))
+		return nil
+	}
 
-	// 1. Processing
-	videoEntity.SetProcessing()
-	if err := h.repo.UpdateStatus(ctx, videoEntity); err != nil {
+	h.logger.Info("processing video", zap.Stringer("video_id", v.ID))
+	v.SetProcessing()
+	if err := h.repo.UpdateStatus(ctx, v); err != nil {
 		return fmt.Errorf("set processing: %w", err)
 	}
 
-	// 2. Transcoding (Fallback logic)
-	hlsURL, duration, err := h.transcoder.Transcode(ctx, videoEntity.ID.String())
+	hlsURL, duration, err := h.transcoder.Transcode(ctx, v.ID.String())
 	if err != nil {
-		h.logger.Error("Transcoding failed", zap.Error(err))
-		// Handle error state (e.g. SetFailed)
-		return err
+		if ctx.Err() != nil {
+			return ctx.Err() // shutting down: the event is redelivered after restart
+		}
+		h.logger.Error("transcoding failed", zap.Stringer("video_id", v.ID), zap.Error(err))
+		v.SetFailed()
+		if err := h.repo.UpdateStatus(ctx, v); err != nil {
+			return fmt.Errorf("set failed: %w", err)
+		}
+		return nil
 	}
 
-	// 3. Published
-	videoEntity.SetPublished(hlsURL, duration)
-	if err := h.repo.UpdateStatus(ctx, videoEntity); err != nil {
+	v.SetPublished(hlsURL, duration)
+	if err := h.repo.UpdateStatus(ctx, v); err != nil {
 		return fmt.Errorf("set published: %w", err)
 	}
+	return h.publishReady(ctx, v)
+}
 
-	// 4. Publish VideoReady event
-	if err := h.producer.Publish(ctx, "video.ready", []byte(videoEntity.ID.String()), []byte(videoEntity.ID.String())); err != nil {
-		h.logger.Error("failed to publish video.ready", zap.Error(err))
+func (h *ConsumerHandler) publishReady(ctx context.Context, v *video.Video) error {
+	id := []byte(v.ID.String())
+	if err := h.producer.Publish(ctx, TopicVideoReady, id, id); err != nil {
+		return fmt.Errorf("publish %s: %w", TopicVideoReady, err)
 	}
-
 	return nil
 }

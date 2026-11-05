@@ -19,6 +19,9 @@ func NewProducer(brokers []string, logger *zap.Logger) *Producer {
 		Addr:         kafka.TCP(brokers...),
 		Balancer:     &kafka.LeastBytes{},
 		BatchTimeout: 10 * time.Millisecond,
+		// The zero value is RequireNone (fire and forget): a write would
+		// "succeed" even if the broker lost the message.
+		RequiredAcks: kafka.RequireAll,
 	}
 	return &Producer{writer: w, logger: logger}
 }

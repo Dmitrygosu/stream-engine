@@ -15,10 +15,12 @@ type Consumer struct {
 
 func NewConsumer(brokers []string, topic, groupID string, logger *zap.Logger) *Consumer {
 	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  brokers,
-		Topic:    topic,
-		GroupID:  groupID,
-		MinBytes: 10e3, // 10KB
+		Brokers: brokers,
+		Topic:   topic,
+		GroupID: groupID,
+		// Events are tiny and rare: waiting for 10KB of data delayed every
+		// message by the full MaxWait.
+		MinBytes: 1,
 		MaxBytes: 10e6, // 10MB
 	})
 	return &Consumer{reader: r, logger: logger}
