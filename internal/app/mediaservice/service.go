@@ -2,12 +2,26 @@ package mediaservice
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
 
-	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 	"github.com/google/uuid"
+
+	"github.com/Dmitrygosu/stream-engine/internal/auth"
+	"github.com/Dmitrygosu/stream-engine/internal/model/video"
+)
+
+// Kafka topics of the media pipeline.
+const (
+	TopicVideoUploaded = "video.uploaded"
+	TopicVideoReady    = "video.ready"
+)
+
+var (
+	ErrForbidden  = errors.New("video belongs to another user")
+	ErrNotPending = errors.New("the upload of this video is already finished")
 )
 
 type EventProducer interface {
@@ -29,7 +43,7 @@ type LocalStorageService struct {
 	BaseURL string
 }
 
-func (s *LocalStorageService) GenerateUploadURL(ctx context.Context, objectKey string) (string, error) {
+func (s *LocalStorageService) GenerateUploadURL(_ context.Context, objectKey string) (string, error) {
 	u, err := url.Parse(s.BaseURL)
 	if err != nil {
 		return "", err
@@ -74,15 +88,36 @@ func (s *MediaService) InitUpload(ctx context.Context, dto InitUploadDTO) (uuid.
 	return v.ID, uploadURL, nil
 }
 
-func (s *MediaService) UploadFinished(ctx context.Context, videoID uuid.UUID) error {
+// UploadFinished queues a pending video for processing. Only its owner (or an
+// admin) may do it, and only once.
+func (s *MediaService) UploadFinished(ctx context.Context, caller auth.Principal, videoID uuid.UUID) error {
 	v, err := s.repo.GetByID(ctx, videoID)
 	if err != nil {
 		return err
 	}
-
-	if err := s.producer.Publish(ctx, "video.uploaded", []byte(v.ID.String()), []byte(v.ID.String())); err != nil {
-		return fmt.Errorf("publish video.uploaded: %w", err)
+	if v.OwnerID != caller.UserID && !caller.IsAdmin() {
+		return ErrForbidden
+	}
+	if v.Status != video.StatusPending {
+		return ErrNotPending
 	}
 
+	id := []byte(v.ID.String())
+	if err := s.producer.Publish(ctx, TopicVideoUploaded, id, id); err != nil {
+		return fmt.Errorf("publish %s: %w", TopicVideoUploaded, err)
+	}
 	return nil
+}
+
+// GetVideo returns a published video to anyone and an unpublished one only to
+// its owner or an admin; others get ErrVideoNotFound.
+func (s *MediaService) GetVideo(ctx context.Context, caller auth.Principal, videoID uuid.UUID) (*video.Video, error) {
+	v, err := s.repo.GetByID(ctx, videoID)
+	if err != nil {
+		return nil, err
+	}
+	if v.Status != video.StatusPublished && v.OwnerID != caller.UserID && !caller.IsAdmin() {
+		return nil, video.ErrVideoNotFound
+	}
+	return v, nil
 }

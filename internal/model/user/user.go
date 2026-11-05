@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrUserNotFound      = errors.New("user not found")
-	ErrEmailTaken        = errors.New("email already taken")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrEmailTaken         = errors.New("email already taken")
 	ErrInvalidCredentials = errors.New("invalid credentials")
 )
 
@@ -21,6 +21,16 @@ const (
 	RoleCreator Role = "CREATOR"
 	RoleAdmin   Role = "ADMIN"
 )
+
+// IsValid reports whether r is one of the known roles.
+func (r Role) IsValid() bool {
+	switch r {
+	case RoleViewer, RoleCreator, RoleAdmin:
+		return true
+	default:
+		return false
+	}
+}
 
 type User struct {
 	ID           uuid.UUID

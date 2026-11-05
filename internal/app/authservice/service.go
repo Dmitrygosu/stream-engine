@@ -4,11 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/Dmitrygosu/stream-engine/internal/model/user"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 type UserRepository interface {
@@ -17,16 +16,18 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*user.User, error)
 }
 
-type AuthService struct {
-	repo       UserRepository
-	signingKey []byte
+// TokenIssuer signs access tokens for authenticated users.
+type TokenIssuer interface {
+	Issue(userID uuid.UUID, role user.Role) (string, error)
 }
 
-func NewAuthService(repo UserRepository, signingKey string) *AuthService {
-	return &AuthService{
-		repo:       repo,
-		signingKey: []byte(signingKey),
-	}
+type AuthService struct {
+	repo   UserRepository
+	tokens TokenIssuer
+}
+
+func NewAuthService(repo UserRepository, tokens TokenIssuer) *AuthService {
+	return &AuthService{repo: repo, tokens: tokens}
 }
 
 type RegisterDTO struct {
@@ -79,17 +80,5 @@ func (s *AuthService) Login(ctx context.Context, dto LoginDTO) (string, error) {
 		return "", user.ErrInvalidCredentials
 	}
 
-	// Generate JWT
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":  u.ID.String(),
-		"role": string(u.Role),
-		"exp":  time.Now().Add(24 * time.Hour).Unix(),
-	})
-
-	tokenString, err := token.SignedString(s.signingKey)
-	if err != nil {
-		return "", fmt.Errorf("sign token: %w", err)
-	}
-
-	return tokenString, nil
+	return s.tokens.Issue(u.ID, u.Role)
 }

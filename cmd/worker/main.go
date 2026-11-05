@@ -18,14 +18,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Config load failed: %v", err)
 	}
+	if err := cfg.Validate(false); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
 
 	l := logger.New(cfg.Logger.Level)
-	defer l.Sync()
+	defer func() { _ = l.Sync() }()
 
 	l.Info("Worker starting...", zap.String("version", cfg.App.Version))
 
 	application := app.New(cfg, l)
-	
+
 	if err := application.RunWorker(context.Background()); err != nil {
 		l.Fatal("Worker failed", zap.Error(err))
 	}

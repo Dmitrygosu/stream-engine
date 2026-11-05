@@ -9,11 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Dmitrygosu/stream-engine/internal/bootstrap"
-	"github.com/Dmitrygosu/stream-engine/internal/config"
-	"github.com/Dmitrygosu/stream-engine/internal/infrastructure/kafka"
 	"github.com/Dmitrygosu/stream-engine/internal/app/authservice"
 	"github.com/Dmitrygosu/stream-engine/internal/app/mediaservice"
+	"github.com/Dmitrygosu/stream-engine/internal/auth"
+	"github.com/Dmitrygosu/stream-engine/internal/bootstrap"
+	"github.com/Dmitrygosu/stream-engine/internal/config"
+	"github.com/Dmitrygosu/stream-engine/internal/httpx"
+	"github.com/Dmitrygosu/stream-engine/internal/infrastructure/kafka"
 	"github.com/Dmitrygosu/stream-engine/internal/repository/userrepository"
 	"github.com/Dmitrygosu/stream-engine/internal/repository/videorepository"
 	"github.com/gin-gonic/gin"
@@ -46,7 +48,7 @@ func (a *App) Bootstrap(ctx context.Context) error {
 	a.pgPool = pool
 
 	a.kafkaProd = kafka.NewProducer(a.cfg.Kafka.Brokers, a.logger)
-	
+
 	return nil
 }
 
@@ -74,12 +76,14 @@ func (a *App) RunAPI(ctx context.Context) error {
 	}
 
 	// 2. services
+	tokens := auth.NewTokens([]byte(a.cfg.Auth.JWTSecret), a.cfg.Auth.Audience, a.cfg.Auth.TokenTTL)
+
 	userRepo := userrepository.NewUserRepository(a.pgPool)
-	authSvc := authservice.NewAuthService(userRepo, "SUPER_SECRET_KEY_CHANGE_ME")
+	authSvc := authservice.NewAuthService(userRepo, tokens)
 	authHandler := authservice.NewHandler(authSvc)
 
 	videoRepo := videorepository.NewVideoRepository(a.pgPool)
-	
+
 	storageSvc := &mediaservice.LocalStorageService{BaseURL: "https://storage.stream-engine.local"}
 	mediaSvc := mediaservice.NewMediaService(videoRepo, a.kafkaProd, storageSvc)
 	mediaHandler := mediaservice.NewHandler(mediaSvc)
@@ -87,10 +91,10 @@ func (a *App) RunAPI(ctx context.Context) error {
 	// 3. router
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	router.Use(gin.Recovery())
+	router.Use(gin.Recovery(), httpx.RequestLogger(a.logger))
 
 	authHandler.RegisterRoutes(router)
-	mediaHandler.RegisterRoutes(router)
+	mediaHandler.RegisterRoutes(router, auth.RequireAuth(tokens))
 
 	router.GET("/health", func(c *gin.Context) {
 		if err := a.pgPool.Ping(c.Request.Context()); err != nil {

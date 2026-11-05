@@ -18,9 +18,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Config load failed: %v", err)
 	}
+	if err := cfg.Validate(true); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
 
 	l := logger.New(cfg.Logger.Level)
-	defer l.Sync()
+	defer func() { _ = l.Sync() }()
 
 	application := app.New(cfg, l)
 
