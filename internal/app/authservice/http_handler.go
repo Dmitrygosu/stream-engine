@@ -38,11 +38,7 @@ func (h *Handler) register(c *gin.Context) {
 		return
 	}
 
-	id, err := h.authService.Register(c.Request.Context(), RegisterDTO{
-		Email:    req.Email,
-		Password: req.Password,
-		Role:     req.Role,
-	})
+	id, err := h.authService.Register(c.Request.Context(), RegisterDTO(req))
 	switch {
 	case errors.Is(err, user.ErrEmailTaken):
 		httpx.Abort(c, http.StatusConflict, "email_taken", "email already taken")
@@ -67,10 +63,7 @@ func (h *Handler) login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.authService.Login(c.Request.Context(), LoginDTO{
-		Email:    req.Email,
-		Password: req.Password,
-	})
+	token, err := h.authService.Login(c.Request.Context(), LoginDTO(req))
 	switch {
 	case errors.Is(err, user.ErrInvalidCredentials):
 		httpx.Abort(c, http.StatusUnauthorized, "invalid_credentials", "invalid email or password")

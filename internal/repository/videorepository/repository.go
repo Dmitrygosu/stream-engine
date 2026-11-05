@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 )
 
 type VideoRepository struct {

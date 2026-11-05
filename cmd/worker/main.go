@@ -7,10 +7,11 @@ import (
 	"context"
 	"log"
 
+	"go.uber.org/zap"
+
 	"github.com/Dmitrygosu/stream-engine/internal/app"
 	"github.com/Dmitrygosu/stream-engine/internal/config"
 	"github.com/Dmitrygosu/stream-engine/pkg/logger"
-	"go.uber.org/zap"
 )
 
 func main() {

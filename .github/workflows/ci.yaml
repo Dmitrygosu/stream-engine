@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.15.0
+
+  test:
+    name: Unit and integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stream_user
+          POSTGRES_PASSWORD: stream_pass
+          POSTGRES_DB: stream_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stream_user -d stream_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Run tests
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+        env:
+          TEST_DATABASE_URL: postgres://stream_user:stream_pass@localhost:5432/stream_test?sslmode=disable
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -n 1
+
+  vulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t stream-engine:ci .
