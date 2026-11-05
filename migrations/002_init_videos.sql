@@ -1,5 +1,6 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS videos (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     owner_id UUID NOT NULL REFERENCES users(id),
     title VARCHAR(255) NOT NULL,
     description TEXT,
@@ -11,4 +12,7 @@ CREATE TABLE IF NOT EXISTS videos (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE INDEX idx_videos_owner_id ON videos(owner_id);
+CREATE INDEX IF NOT EXISTS idx_videos_owner_id ON videos(owner_id);
+
+-- +goose Down
+DROP TABLE IF EXISTS videos;

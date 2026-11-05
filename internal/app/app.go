@@ -68,6 +68,11 @@ func (a *App) RunAPI(ctx context.Context) error {
 	}
 	defer a.Close()
 
+	// Only the API applies migrations; the worker expects the schema to exist.
+	if err := bootstrap.Migrate(ctx, a.pgPool); err != nil {
+		return err
+	}
+
 	// 2. services
 	userRepo := userrepository.NewUserRepository(a.pgPool)
 	authSvc := authservice.NewAuthService(userRepo, "SUPER_SECRET_KEY_CHANGE_ME")
