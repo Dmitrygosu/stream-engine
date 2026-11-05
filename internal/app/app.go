@@ -125,11 +125,6 @@ func (a *App) RunAPI(ctx context.Context) error {
 	return a.httpServer.Shutdown(shutdownCtx)
 }
 
-// expose deps
-func (a *App) GetDeps() (*pgxpool.Pool, *kafka.Producer) {
-	return a.pgPool, a.kafkaProd
-}
-
 // start worker
 func (a *App) RunWorker(ctx context.Context) error {
 	// 1. Bootstrap

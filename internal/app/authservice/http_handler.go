@@ -1,7 +1,6 @@
 package authservice
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/Dmitrygosu/stream-engine/internal/model/user"

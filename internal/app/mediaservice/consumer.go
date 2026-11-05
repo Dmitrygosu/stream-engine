@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )

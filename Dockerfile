@@ -1,35 +1,24 @@
-# builder
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-# tools
-RUN apk add --no-cache git make
-
-# deps
 COPY go.mod go.sum ./
 RUN go mod download
 
-# src
 COPY . .
+# -trimpath keeps local file system paths out of the binaries.
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
-# build
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api ./cmd/api/main.go
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/worker ./cmd/worker/main.go
+FROM alpine:3.23
 
-# prod
-FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata \
+    && adduser -D -H -u 10001 stream
 
-WORKDIR /app
+COPY --from=builder /out/api /usr/local/bin/api
+COPY --from=builder /out/worker /usr/local/bin/worker
 
-# cp bins
-COPY --from=builder /bin/api /app/api
-COPY --from=builder /bin/worker /app/worker
-COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/config.yaml ./config.yaml
-
-# port
+USER stream
 EXPOSE 8080
 
-# run
-CMD ["/app/api"]
+CMD ["api"]

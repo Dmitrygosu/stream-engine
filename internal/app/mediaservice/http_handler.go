@@ -1,10 +1,8 @@
 package mediaservice
 
 import (
-	"context"
 	"net/http"
 
-	"github.com/Dmitrygosu/stream-engine/internal/model/video"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )

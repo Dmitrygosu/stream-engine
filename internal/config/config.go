@@ -11,7 +11,6 @@ type Config struct {
 	HTTP     HTTPConfig     `mapstructure:"HTTP"`
 	Postgres PostgresConfig `mapstructure:"POSTGRES"`
 	Kafka    KafkaConfig    `mapstructure:"KAFKA"`
-	Redis    RedisConfig    `mapstructure:"REDIS"`
 	Logger   LoggerConfig   `mapstructure:"LOGGER"`
 }
 
@@ -32,10 +31,6 @@ type KafkaConfig struct {
 	Brokers []string `mapstructure:"BROKERS"`
 }
 
-type RedisConfig struct {
-	Addr string `mapstructure:"ADDR"`
-}
-
 type LoggerConfig struct {
 	Level string `mapstructure:"LEVEL"`
 }
@@ -51,7 +46,6 @@ func Load() (*Config, error) {
 	viper.BindEnv("POSTGRES.URL", "DB_URL")
 	viper.BindEnv("HTTP.PORT", "HTTP_PORT")
 	viper.BindEnv("KAFKA.BROKERS", "KAFKA_BROKERS")
-	viper.BindEnv("REDIS.ADDR", "REDIS_ADDR")
 
 	viper.AddConfigPath(".")
 	viper.SetConfigName("config")
