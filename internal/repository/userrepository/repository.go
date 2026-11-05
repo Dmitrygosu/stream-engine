@@ -8,6 +8,7 @@ import (
 	"github.com/Dmitrygosu/stream-engine/internal/model/user"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,11 +26,20 @@ func (r *UserRepository) Create(ctx context.Context, u *user.User) error {
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 	_, err := r.pool.Exec(ctx, sql, u.ID, u.Email, u.PasswordHash, u.Role, u.CreatedAt, u.UpdatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == emailUniqueConstraint {
+		return user.ErrEmailTaken
+	}
 	if err != nil {
 		return fmt.Errorf("user repo: create: %w", err)
 	}
 	return nil
 }
+
+const (
+	uniqueViolation       = "23505"
+	emailUniqueConstraint = "users_email_key"
+)
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*user.User, error) {
 	const sql = `

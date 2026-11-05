@@ -74,6 +74,30 @@ func TestRegisterAndLogin_IssueATokenWithTheRole(t *testing.T) {
 	assert.Equal(t, auth.Principal{UserID: id, Role: user.RoleCreator}, principal)
 }
 
+func TestEmailsAreCaseInsensitive(t *testing.T) {
+	svc, _ := newService()
+	ctx := context.Background()
+
+	_, err := svc.Register(ctx, authservice.RegisterDTO{Email: "  Ann@Example.COM ", Password: "correct horse"})
+	require.NoError(t, err)
+
+	_, err = svc.Register(ctx, authservice.RegisterDTO{Email: "ann@example.com", Password: "another one"})
+	require.ErrorIs(t, err, user.ErrEmailTaken, "the same address in another case is the same account")
+
+	_, err = svc.Login(ctx, authservice.LoginDTO{Email: "ANN@example.com", Password: "correct horse"})
+	require.NoError(t, err)
+}
+
+func TestRegister_CannotSelfAssignAdmin(t *testing.T) {
+	svc, _ := newService()
+
+	_, err := svc.Register(context.Background(), authservice.RegisterDTO{
+		Email: "mallory@example.com", Password: "correct horse", Role: "ADMIN",
+	})
+
+	require.ErrorIs(t, err, authservice.ErrRoleNotAllowed)
+}
+
 func TestLogin_RejectsWrongCredentials(t *testing.T) {
 	svc, _ := newService()
 	ctx := context.Background()
